@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "express": "^4.16.2",
-    "sockjs": "^0.3.19"
+    "sockjs": "^0.3.19",
+    "uuid": "^3.2.1",
+    "uuid-validate": "^0.0.2"
   }
 }

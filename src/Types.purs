@@ -12,6 +12,7 @@ newtype VideoId = VideoId String
 derive newtype instance rfVideoId :: ReadForeign VideoId
 derive newtype instance wfVideoId :: WriteForeign VideoId
 derive instance genericVideoId :: Generic VideoId _
+derive instance eqVideoId :: Eq VideoId
 instance showVideoId :: Show VideoId where
   show = genericShow
 
@@ -37,11 +38,6 @@ type AppState =
   , shouldPlay :: Boolean
   }
 
-type CurrentQueueMessage =
-  { queue :: Queue
-  , current :: Number
-  }
-
 type PlayPauseMessage =
   { play :: Boolean }
 
@@ -51,16 +47,24 @@ type SkipMessage =
 type SeekMessage =
   { seek :: Number }
 
+type EnqueueMessage =
+  { enqueue :: Video }
+
+type DequeueMessage =
+  { dequeue :: VideoId }
+
 data Message
-  = CurrentQueue CurrentQueueMessage
-  | PlayPause    PlayPauseMessage
+  = PlayPause    PlayPauseMessage
   | Skip         SkipMessage
   | Seek         SeekMessage
+  | Enqueue      EnqueueMessage
+  | Dequeue      DequeueMessage
 instance readForeignMessage :: ReadForeign Message where
-  readImpl f = CurrentQueue <$> read' f
-    <|> PlayPause <$> read' f
+  readImpl f = PlayPause <$> read' f
     <|> Skip <$> read' f
     <|> Seek <$> read' f
+    <|> Enqueue <$> read' f
+    <|> Dequeue <$> read' f
 
 -- derive instance genericMessage :: Generic Message _
 -- instance showMessage :: Show Message where
