@@ -11,9 +11,19 @@
     "purescript-console": "^3.0.0",
     "purescript-simple-json": "^2.0.1",
     "purescript-express": "^0.6.3",
-    "purescript-uuid": "^4.0.0"
+    "purescript-uuid": "^4.0.0",
+    "purescript-aff-coroutines": "^6.0.0",
+    "purescript-coroutines": "^4.0.0",
+    "purescript-sockjs-client": "^0.1.1",
+    "purescript-halogen": "^3.1.2",
+    "purescript-affjax": "^5.0.0",
+    "purescript-aff": "^4.0.2",
+    "purescript-arrays": "^4.3.0"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0"
+  },
+  "resolutions": {
+    "purescript-arraybuffer-types": "^2.0.0"
   }
 }

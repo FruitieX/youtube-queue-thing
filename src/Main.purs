@@ -10,7 +10,7 @@ import Data.Array (concat, deleteAt, length, snoc, take, takeEnd)
 import Data.Either (hush)
 import Data.Maybe (Maybe(Nothing), maybe)
 import Data.Monoid (mempty)
-import Data.StrMap (delete, empty, insert)
+import Data.StrMap (StrMap, delete, empty, insert)
 import Data.Traversable (traverse, traverse_)
 import Data.UUID (genUUID)
 import Node.HTTP as HTTP
@@ -18,30 +18,23 @@ import Node.Stream (end)
 import Simple.JSON (readJSON, writeJSON)
 import SockJS.Server as SockJS
 
-initState
-  :: AppState
-initState =
-  { queue: []
-  , history: []
-  , play: false
-  , seek: 0.0
-  }
+type Clients = StrMap SockJS.Connection
 
 handleMessage
   :: AppState
   -> Message
   -> AppState
-handleMessage state (PlayPause message) = do
+handleMessage state (PlayPause {play}) = do
   state
-    { play = message.play }
+    { play = play }
 
 -- Skip forward / backwards in queue
-handleMessage state (Skip message) = do
+handleMessage state (Skip {skip}) = do
   -- Concat all videos into one array
   let all = concat [state.history, state.queue]
 
   -- Get new queue by taking queueLength items from 'all'
-  let queueLength = length state.queue - message.skip
+  let queueLength = length state.queue - skip
   -- Rest of items from 'all' go into history (max 1000 items)
   let historyLength = max 1000 $ length all - queueLength
 
@@ -52,22 +45,25 @@ handleMessage state (Skip message) = do
     }
 
 -- Seek in current video
-handleMessage state (Seek message) = do
+handleMessage state (Seek {seek}) = do
   state
-    { seek = message.seek }
+    { seek = seek }
 
 -- Adds video to queue
-handleMessage state (Enqueue message) = do
+handleMessage state (Enqueue {enqueue}) = do
   state
-    { queue = snoc state.queue message.enqueue }
+    { queue = snoc state.queue enqueue }
 
 -- Removes video from queue
-handleMessage state (Dequeue message) = do
+handleMessage state (Dequeue {dequeue}) = do
   --let index = findIndex (\e -> e.id == message.dequeue) state.queue
 
   --let newQueue = (flip deleteAt state.queue) =<< index
-  let newQueue = deleteAt message.dequeue state.queue
+  let newQueue = deleteAt dequeue state.queue
   maybe state (state { queue = _ }) newQueue
+
+-- Ignore State messages, they are meant for server -> client communication only
+handleMessage state (State _) = state
 
 decodeMessage
   :: SockJS.Message
@@ -85,6 +81,11 @@ broadcast clients message = do
     SockJS.write client message) curClients
   pure unit
 
+stateMsg
+  :: AppState
+  -> StateMessage
+stateMsg state = { state }
+
 onData
   :: Ref AppState
   -> Ref Clients
@@ -95,7 +96,9 @@ onData state clients message = do
   let decoded = decodeMessage message
   let nextState = handleMessage curState <$> decoded
   traverse_ (writeRef state) nextState
-  maybe mempty (\s -> broadcast clients $ writeJSON s) nextState
+
+  -- Broadcast new state
+  maybe mempty (\s -> broadcast clients $ writeJSON $ stateMsg s) nextState
   pure unit
 
 runApp
@@ -114,7 +117,7 @@ runApp sockjs = do
 
     -- Send current state to client
     curState <- readRef state
-    SockJS.write conn $ writeJSON curState
+    SockJS.write conn $ writeJSON $ stateMsg curState
 
     -- Attach event handlers
     SockJS.onData conn $ onData state clients
