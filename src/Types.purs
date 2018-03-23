@@ -5,6 +5,7 @@ import Prelude
 import Control.Alt ((<|>))
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
+import Data.Newtype (class Newtype)
 import Data.StrMap (StrMap)
 import Data.Variant (Variant)
 import Simple.JSON (class ReadForeign, class WriteForeign, class WriteForeignVariant, read', write, writeImpl, writeVariantImpl)
@@ -15,6 +16,7 @@ newtype VideoId = VideoId String
 derive newtype instance rfVideoId :: ReadForeign VideoId
 derive newtype instance wfVideoId :: WriteForeign VideoId
 derive instance genericVideoId :: Generic VideoId _
+derive instance newtypeVideoId :: Newtype VideoId _
 derive instance eqVideoId :: Eq VideoId
 instance showVideoId :: Show VideoId where
   show = genericShow
@@ -34,7 +36,7 @@ type Video =
   , description :: String
   , channel :: String
   , thumbnail :: String
-  , duration :: Number
+  --, duration :: Number
   }
 
 type Queue = Array Video
