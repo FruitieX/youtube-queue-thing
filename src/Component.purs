@@ -3,14 +3,18 @@ module Component where
 import Prelude
 import Types
 
-import Control.Monad.Aff (Aff)
-import Control.Monad.Aff.Console (log)
+import Control.Monad.Aff (Aff, launchAff_)
+import Control.Monad.Aff.Console (log, logShow)
+import Control.Monad.Eff (Eff)
 import DOM.Event.KeyboardEvent (code)
+import DOM.HTML.HTMLTrackElement (label)
 import DOM.Node.Document (doctype)
 import Data.Array (head)
 import Data.Either (hush)
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), isJust, maybe)
 import Data.Newtype (unwrap)
+import Data.Traversable (traverse, traverse_)
+import Data.Tuple.Nested ((/\))
 import Global.Unsafe (unsafeStringify)
 import Halogen (liftAff, liftEff)
 import Halogen as H
@@ -19,6 +23,7 @@ import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Network.HTTP.Affjax as AX
 import Simple.JSON (readJSON)
+import Unsafe.Coerce (unsafeCoerce)
 import YouTube as YT
 
 data Query a
@@ -29,12 +34,14 @@ data Query a
   | NextButton a
   | IncomingSockMsg Message a
   | EnqueueSearchResult Video a
+  | Init a
 
 type FrontendState =
   { searchLoading :: Boolean
   , searchInput :: String
   , searchResults :: Maybe SearchResults
   , loadedVideoId :: Maybe VideoId
+  , player :: Maybe YT.Player
   , app :: AppState
   }
 
@@ -55,10 +62,12 @@ type SearchResults = Array Video
 
 component :: H.Component HH.HTML Query Unit Message (Aff _)
 component =
-  H.component
+  H.lifecycleComponent
     { initialState: const initialState
     , render
     , eval
+    , initializer: Just $ H.action Init
+    , finalizer: Nothing
     , receiver: const Nothing
     }
   where
@@ -69,16 +78,16 @@ component =
     , searchInput: ""
     , searchResults: Nothing
     , loadedVideoId: Nothing
+    , player: Nothing
     , app: initState
     }
 
   render :: FrontendState -> H.ComponentHTML Query
   render state =
     HH.div_
-      [ HH.iframe [ HP.src "https://www.youtube.com/embed?enablejsapi=1&controls=0&showinfo=0" ]
-      --[ HH.div [ HP.id_ "player" ] []
-      , HH.div_ [ HH.text "Queue:" ]
-      , HH.ol_ $ map (\video -> HH.li_ [ HH.text video.title ]) state.app.queue
+      -- [ HH.iframe [ HP.src "https://www.youtube.com/embed?enablejsapi=1&controls=0&showinfo=0" ]
+      -- [ HH.div [ HP.id_ "player" ] []
+      [ HH.iframe [ HP.id_ "player", HP.src "https://www.youtube.com/embed?enablejsapi=1&controls=0&showinfo=0" ]
       , HH.div_
         [ HH.button
           [ HE.onClick (HE.input_ PrevButton) ]
@@ -90,6 +99,8 @@ component =
           [ HE.onClick (HE.input_ NextButton) ]
           [ HH.text "Next" ]
         ]
+      , HH.div_ [ HH.text "Queue:" ]
+      , HH.ol_ $ map (\video -> HH.li_ [ HH.text video.title ]) state.app.queue
       , HH.input
         [ HP.value state.searchInput
         , HE.onValueInput (HE.input HandleInput)
@@ -123,28 +134,78 @@ component =
         [ HH.text result.description ]
       ]
 
+  updatePlayerState :: FrontendState -> FrontendState -> YT.Player -> Aff _ Unit
+  updatePlayerState old new player = do
+    let (loadedVideo :: Maybe VideoId) = old.loadedVideoId
+    let (nextVideo :: Maybe VideoId) = _.id <$> head new.app.queue
+
+    log $ unsafeCoerce loadedVideo
+    log $ unsafeCoerce nextVideo
+    log $ unsafeCoerce new.app.play
+
+    liftEff $
+      case new.app.play /\ nextVideo of
+        true /\ id | id == loadedVideo
+          -> YT.callPlayer player "playVideo" []
+        true /\ Just nextVideo'
+          -- TODO: update loadedVideo
+          -> YT.callPlayer player "loadVideoById" [unwrap nextVideo']
+        _ -> YT.callPlayer player "pauseVideo" []
+
+    -- if new.app.play
+    --   then do
+    --     if loadedVideoId == new.app.
+    --     liftEff $ YT.callPlayer player "playVideo" []
+    --   else
+    --     liftEff $ YT.callPlayer player "pauseVideo" []
+
   eval :: Query ~> H.ComponentDSL FrontendState Query Message (Aff _)
+  -- Handle initialization
+  eval (Init next) = do
+    player <- liftAff $ YT.initPlayer "player"
+      (\foo -> pure unit)
+
+    --traverse_ launchAff_ $ updatePlayerState initialState initialState <$> player
+    H.modify \st -> st { player = Just player }
+      --(\ready -> log $ unsafeStringify ready)
+      --(\player -> H.modify (\st -> st { player = Just player }))
+      --(\ready -> log $ unsafeStringify ready)
+      --(\ready -> log $ unsafeStringify ready)
+    pure next
+
+    where asd a = log $ unsafeStringify a
+
   -- Handle incroming messages on websocket
-  eval (IncomingSockMsg (State stateMsg) next) = do
-    let nextState = stateMsg.state
-    H.modify \st -> st { app = nextState }
+  eval (IncomingSockMsg (State {state}) next) = do
+    prevState <- H.get
+    let nextState = prevState { app = state }
 
-    let nextVideo = head nextState.queue
+    case nextState.player of
+      Just player -> liftAff $ updatePlayerState prevState nextState player
+      _           -> pure unit
 
-    prevVideoId <- H.gets _.loadedVideoId
-    let nextVideoId = _.id <$> nextVideo
+    H.modify \st -> nextState
 
-    if nextState.play
-      then do
-        if prevVideoId /= nextVideoId
-          then do
-            liftEff $ YT.callPlayer "loadVideoById" [maybe "" (\id -> unwrap id) nextVideoId, "0", "large"]
-            H.modify \st -> st { loadedVideoId = nextVideoId }
-          else pure unit
-        liftEff $ YT.callPlayer "playVideo" []
-      else liftEff $ YT.callPlayer "pauseVideo" []
 
-    liftAff $ log $ "new state: " <> unsafeStringify nextState
+    -- let nextVideo = head nextState.queue
+
+    -- prevVideoId <- H.gets _.loadedVideoId
+    -- let nextVideoId = _.id <$> nextVideo
+
+    -- if nextState.play
+    --   then do
+    --     if prevVideoId /= nextVideoId
+    --       then do
+    --         liftEff $ YT.callPlayer "loadVideoById" [maybe "" (\id -> unwrap id) nextVideoId, "0", "large"]
+    --         H.modify \st -> st { loadedVideoId = nextVideoId }
+    --       else pure unit
+    --
+    --     --player <- H.gets _.player
+    --     --YT.callPlayer <$> player <*> Just "playVideo" <*> Just []
+    --   --else liftEff $ YT.callPlayer "pauseVideo" []
+    --   else pure unit
+    --
+    --liftAff $ log $ "new state: " <> unsafeStringify nextState
 
     pure next
   -- Ignore any other messages as they are client -> server

@@ -1,17 +1,33 @@
-exports.callPlayer_ = function(func, args) {
-  console.log('calling', func, 'with args', args);
-    var i = 0,
-        iframes = document.getElementsByTagName('iframe'),
-        src = '';
-    if (!iframes.length) console.log('YouTube iframe not found!');
-    for (i = 0; i < iframes.length; i += 1) {
-        src = iframes[i].getAttribute('src');
-        if (src && src.indexOf('youtube.com/embed') !== -1) {
-            iframes[i].contentWindow.postMessage(JSON.stringify({
-                'event': 'command',
-                'func': func,
-                'args': args || []
-            }), '*');
-        }
-    }
+// THIS IS AWFUL
+// https://developers.google.com/youtube/iframe_api_reference
+
+exports.initPlayer_ = function(id) {
+  return function(onStateChange) {
+    return function(onError, onSuccess) {
+      var tag = document.createElement('script');
+
+      tag.src = "https://www.youtube.com/iframe_api";
+      var firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+      window.onYouTubeIframeAPIReady = function() {
+        var player = new YT.Player(id, {
+          // height: '390',
+          // width: '640',
+          // videoId: 'M7lc1UVf-VE',
+          events: {
+            'onReady': function() { onSuccess(player); },
+            'onStateChange': onStateChange
+          }
+        });
+      };
+    };
+  };
+}
+
+exports.callPlayer_ = function(player, func, args) {
+  if (player[func]) {
+    console.log('calling', func, 'with args', args);
+    player[func].apply(player, args);
+  }
 }

@@ -101,7 +101,7 @@ wsConsumer' query = CR.consumer \sock -> do
   liftEff $ SockJS.onMessage sock \message -> do
     let (decoded :: Maybe Message) = hush $ JSON.readJSON message
     launchAff_ $ do
-      log $ "Received: " <> message
+      --log $ "Received: " <> message
       maybe mempty (\a -> query $ H.action $ Component.IncomingSockMsg a) decoded
       --maybe ?asd $ (query H.action) decoded
       --maybe ?asd (query $ H.action $ Component.IncomingSockMsg) decoded
