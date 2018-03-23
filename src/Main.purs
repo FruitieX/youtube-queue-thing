@@ -36,7 +36,7 @@ handleMessage state (Skip {skip}) = do
   -- Get new queue by taking queueLength items from 'all'
   let queueLength = length state.queue - skip
   -- Rest of items from 'all' go into history (max 1000 items)
-  let historyLength = max 1000 $ length all - queueLength
+  let historyLength = min 1000 $ length all - queueLength
 
   state
     { queue = takeEnd queueLength all
