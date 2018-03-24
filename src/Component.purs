@@ -3,17 +3,14 @@ module Component where
 import Prelude
 import Types
 
-import Control.Monad.Aff (Aff, launchAff_)
-import Control.Monad.Aff.Console (log, logShow)
-import Control.Monad.Eff (Eff)
+import Control.Monad.Aff (Aff)
+import Control.Monad.Aff.Console (log)
 import DOM.Event.KeyboardEvent (code)
-import DOM.HTML.HTMLTrackElement (label)
-import DOM.Node.Document (doctype)
 import Data.Array (head)
 import Data.Either (hush)
-import Data.Maybe (Maybe(..), isJust, maybe)
+import Data.Maybe (Maybe(Nothing, Just))
 import Data.Newtype (unwrap)
-import Data.Traversable (traverse, traverse_)
+import Data.Traversable (traverse)
 import Data.Tuple.Nested ((/\))
 import Global.Unsafe (unsafeStringify)
 import Halogen (liftAff, liftEff)
@@ -134,7 +131,7 @@ component =
         [ HH.text result.description ]
       ]
 
-  updatePlayerState :: FrontendState -> FrontendState -> YT.Player -> Aff _ Unit
+  updatePlayerState :: FrontendState -> FrontendState -> YT.Player -> Aff _ FrontendState
   updatePlayerState old new player = do
     let (loadedVideo :: Maybe VideoId) = old.loadedVideoId
     let (nextVideo :: Maybe VideoId) = _.id <$> head new.app.queue
@@ -145,12 +142,15 @@ component =
 
     liftEff $
       case new.app.play /\ nextVideo of
-        true /\ id | id == loadedVideo
-          -> YT.callPlayer player "playVideo" []
-        true /\ Just nextVideo'
-          -- TODO: update loadedVideo
-          -> YT.callPlayer player "loadVideoById" [unwrap nextVideo']
-        _ -> YT.callPlayer player "pauseVideo" []
+        true /\ id | id == loadedVideo -> do
+          YT.callPlayer player "playVideo" []
+          pure new
+        true /\ Just nextVideo' -> do
+          YT.callPlayer player "loadVideoById" [unwrap nextVideo']
+          pure $ new { loadedVideoId = Just nextVideo' }
+        _ -> do
+          YT.callPlayer player "pauseVideo" []
+          pure new
 
     -- if new.app.play
     --   then do
@@ -177,35 +177,15 @@ component =
 
   -- Handle incroming messages on websocket
   eval (IncomingSockMsg (State {state}) next) = do
-    prevState <- H.get
-    let nextState = prevState { app = state }
+    player :: Maybe YT.Player <- H.gets _.player
+    prevState :: FrontendState <- H.get
+    let (nextState :: FrontendState) = prevState { app = state }
 
-    case nextState.player of
-      Just player -> liftAff $ updatePlayerState prevState nextState player
-      _           -> pure unit
+    nextState' <- traverse liftAff $ updatePlayerState prevState nextState <$> player
 
-    H.modify \st -> nextState
-
-
-    -- let nextVideo = head nextState.queue
-
-    -- prevVideoId <- H.gets _.loadedVideoId
-    -- let nextVideoId = _.id <$> nextVideo
-
-    -- if nextState.play
-    --   then do
-    --     if prevVideoId /= nextVideoId
-    --       then do
-    --         liftEff $ YT.callPlayer "loadVideoById" [maybe "" (\id -> unwrap id) nextVideoId, "0", "large"]
-    --         H.modify \st -> st { loadedVideoId = nextVideoId }
-    --       else pure unit
-    --
-    --     --player <- H.gets _.player
-    --     --YT.callPlayer <$> player <*> Just "playVideo" <*> Just []
-    --   --else liftEff $ YT.callPlayer "pauseVideo" []
-    --   else pure unit
-    --
-    --liftAff $ log $ "new state: " <> unsafeStringify nextState
+    case nextState' of
+      Just state -> H.put state
+      _          -> pure unit
 
     pure next
   -- Ignore any other messages as they are client -> server
