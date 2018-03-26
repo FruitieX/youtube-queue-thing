@@ -1,6 +1,7 @@
 {
   "private": true,
   "scripts": {
+    "start": "pulp run",
     "be-build": "pulp build",
     "be-watch": "pulp -w run",
     "fe-build": "pulp browserify -m Frontend --to dist/app.js",
