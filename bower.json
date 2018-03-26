@@ -18,7 +18,8 @@
     "purescript-halogen": "^3.1.2",
     "purescript-affjax": "^5.0.0",
     "purescript-aff": "^4.0.2",
-    "purescript-arrays": "^4.3.0"
+    "purescript-arrays": "^4.3.0",
+    "purescript-sockjs-node": "^0.1.1"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0"

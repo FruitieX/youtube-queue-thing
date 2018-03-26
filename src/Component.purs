@@ -31,6 +31,7 @@ data Query a
   | NextButton a
   | IncomingSockMsg Message a
   | EnqueueSearchResult Video a
+  | PlayerEvent YT.PlayerState (H.SubscribeStatus -> a)
   | Init a
 
 type FrontendState =
@@ -82,9 +83,7 @@ component =
   render :: FrontendState -> H.ComponentHTML Query
   render state =
     HH.div_
-      -- [ HH.iframe [ HP.src "https://www.youtube.com/embed?enablejsapi=1&controls=0&showinfo=0" ]
-      -- [ HH.div [ HP.id_ "player" ] []
-      [ HH.iframe [ HP.id_ "player", HP.src "https://www.youtube.com/embed?enablejsapi=1&controls=0&showinfo=0" ]
+      [ HH.iframe [ HP.id_ "player", HP.src "https://www.youtube.com/embed?enablejsapi=1&controls=1&showinfo=0" ]
       , HH.div_
         [ HH.button
           [ HE.onClick (HE.input_ PrevButton) ]
@@ -104,7 +103,6 @@ component =
         , HE.onKeyDown \e -> case code e of
           "Enter" -> Just (H.action PerformSearch)
           _       -> Nothing
-        --, HP (HE.input_ PerformSearch)
         ]
       , HH.button
         [ HE.onClick (HE.input_ PerformSearch) ]
@@ -152,28 +150,18 @@ component =
           YT.callPlayer player "pauseVideo" []
           pure new
 
-    -- if new.app.play
-    --   then do
-    --     if loadedVideoId == new.app.
-    --     liftEff $ YT.callPlayer player "playVideo" []
-    --   else
-    --     liftEff $ YT.callPlayer player "pauseVideo" []
-
   eval :: Query ~> H.ComponentDSL FrontendState Query Message (Aff _)
   -- Handle initialization
   eval (Init next) = do
     player <- liftAff $ YT.initPlayer "player"
-      (\foo -> pure unit)
 
-    --traverse_ launchAff_ $ updatePlayerState initialState initialState <$> player
+    -- Subscribe to events emitted by the player
+    H.subscribe $ H.eventSource
+      (YT.attachPlayerStateHandler player)
+      (Just <<< H.request <<< PlayerEvent)
+
     H.modify \st -> st { player = Just player }
-      --(\ready -> log $ unsafeStringify ready)
-      --(\player -> H.modify (\st -> st { player = Just player }))
-      --(\ready -> log $ unsafeStringify ready)
-      --(\ready -> log $ unsafeStringify ready)
     pure next
-
-    where asd a = log $ unsafeStringify a
 
   -- Handle incroming messages on websocket
   eval (IncomingSockMsg (State {state}) next) = do
@@ -220,10 +208,19 @@ component =
     H.modify (\state -> state { searchInput = searchInput })
     pure next
 
+  -- Handles search result press
   eval (EnqueueSearchResult result next) = do
     H.raise $ Enqueue { enqueue: result }
     H.modify (\state -> state { searchResults = Nothing })
     pure next
+
+  -- Handles events from player
+  eval (PlayerEvent playerState next) = do
+    case playerState of
+      YT.Ended -> H.raise $ Skip { skip: 1 }
+      _        -> pure unit
+
+    pure $ next H.Listening
 
 parseSearchResults
   :: String
